@@ -1,5 +1,4 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
 
 describe("AuctionCreator",  function () {
 	let crea;
