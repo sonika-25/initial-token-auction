@@ -1,4 +1,7 @@
-const { expect } = require("chai");
+import { describe } from "mocha";
+import { expect } from "chai";
+const vite = require('@vite/vuilder');
+import config from "./vite.config.json";
 
 describe("AuctionCreator",  function () {
 	let crea;
