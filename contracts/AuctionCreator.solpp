@@ -5,6 +5,9 @@ contract AuctionCreator{
    event bidPlaced (uint256 auctionId, uint256 bidId, uint256 time);
    event TokensSold (uint256 auctionId, uint256 time);
    event viteReturned (uint256 auctionId, uint256 time);
+   event BidChanged (uint256 auctionId, uint256 bidId);
+   event BidCancelled (uint256 auctionId, uint256 bidId);
+
    enum AuctionStatus {
       ComingSoon,
       Ongoing,
@@ -14,6 +17,7 @@ contract AuctionCreator{
       uint256 auctionId;
       uint256 amount;
       uint256 endDate;
+      uint256 minPrice;
       address [] buyers;
       address payable seller;
       vitetoken assetId;
@@ -27,24 +31,66 @@ contract AuctionCreator{
    }
    Auction [] public auctions;
    mapping (uint256 => Bid[]) public bidsPerAuction;
+   vitetoken public constant VITE = "tti_5649544520544f4b454e6e40";
    constructor () payable {}
 
-   function startAuction(vitetoken _token, uint256 _endDate, uint256 _amount) public {
+   function startAuction(vitetoken _token, uint256 _endDate, uint256 _amount, uint256 _minPrice) public {
       require(msg.token == _token, "send same token");
       require(balance(_token)>=_amount , "token not sufficient");
       Auction memory auction;
       auction.auctionId = auctions.length;
       auction.amount = _amount;
       auction.endDate = _endDate;
+      auction.minPrice = _minPrice;
       auction.seller = payable(msg.sender);
       auction.assetId = _token;
       auction.status = AuctionStatus.Ongoing;
+
       auctions.push (auction);
       emit auctionCreated (auctions.length, block.timestamp);
    }
+   function getAuctionInfo (uint256 _auctionId) public view returns (
+      uint256 id,
+      uint256 amount,
+      uint256 endDate,
+      uint256 minPrice,
+      address[] memory buyers,
+      address seller,
+      vitetoken token,
+      AuctionStatus status
 
+    ){
+      Auction memory auction = auctions[_auctionId];
+      return (
+         auction.auctionId,
+         auction.amount,
+         auction.endDate,
+         auction.minPrice,
+         auction.buyers,
+         auction.seller,
+         auction.assetId,
+         auction.status
+      );
+    }
+
+   function returnBidInfo (uint256 _auctionId, uint256 _bidId) public view returns (
+   uint256 bidId,
+   address buyer,
+   uint256 amont,
+   uint256 unitPrice
+   ) {
+   Bid memory bid = bidsPerAuction[_auctionId][_bidId];
+   return (
+      bid.bidId,
+      bid.buyer,
+      bid.amount,
+      bid.unitPrice
+   );
+   }
    function placeBid (uint256 _auctionId, uint256 _bidAmount, uint256 _unitPrice) public payable withinDuration(_auctionId) {
-      require (msg.value == _bidAmount, "_bidAmount too high");
+      require (msg.value == _bidAmount, "msg.value not equal to bid amount");
+      require (_unitPrice >= auctions[_auctionId].minPrice, "unit price too low");
+      require(msg.token == VITE, "TokenAuction: bid must be placed in VITE");
       bidsPerAuction[_auctionId].push (Bid(
          bidsPerAuction[_auctionId].length,
          payable (msg.sender),
@@ -53,7 +99,20 @@ contract AuctionCreator{
       ));
       emit bidPlaced (_auctionId, bidsPerAuction[_auctionId].length, block.timestamp);
    }
-
+   function changeBid (uint256 _auctionId, uint256 _bidId, uint256 _newBidAmount, uint256 _newUnitPrice) public withinDuration(_auctionId) {
+      require (_newUnitPrice >= auctions[_auctionId].minPrice, "unit price too low");
+      bidsPerAuction[_auctionId][_bidId].amount = _newBidAmount;
+      bidsPerAuction[_auctionId][_bidId].unitPrice = _newUnitPrice;
+      emit BidChanged (_auctionId, _bidId);
+   }
+   function cancelBid (uint256 _auctionId, uint256 _bidId) public withinDuration (_auctionId){
+      require(bidsPerAuction[_auctionId][_bidId].buyer != address(0), "bid does not exist");
+      bidsPerAuction[_auctionId][_bidId].buyer = payable(address(0));
+      bidsPerAuction[_auctionId][_bidId].amount = 0;
+      bidsPerAuction[_auctionId][_bidId].unitPrice = 0;
+      bidsPerAuction[_auctionId][_bidId].bidId = 0;
+      emit BidCancelled (_auctionId, _bidId);
+   }
    function ResolveAuction (uint256 _auctionId) public payable {
       require (block.timestamp > auctions[_auctionId].endDate , "Auction Ongoing");
       uint256 len = bidsPerAuction[_auctionId].length;
@@ -104,7 +163,7 @@ contract AuctionCreator{
 
       auctions[_auctionId].status = AuctionStatus.Over;
    }
-   
+
    modifier withinDuration (uint256 _auctionId) {
       require (block.timestamp<= auctions[_auctionId].endDate, "aution over");
       require (auctions[_auctionId].status == AuctionStatus.Ongoing, "auction over");
